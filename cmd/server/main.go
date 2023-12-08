@@ -11,8 +11,7 @@ import (
 func main() {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
-	r.Get("/brasilapi/{cep}", webserver.BrasilApiCepHandler)
-	r.Get("/viacep/{cep}", webserver.ViaCepCepHandler)
+	r.Get("/fastestcep/{cep}", webserver.FastestCepHandler)
 	http.ListenAndServe(":8080", r)
 }
 
