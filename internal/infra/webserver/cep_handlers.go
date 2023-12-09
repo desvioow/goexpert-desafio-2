@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"time"
 
@@ -22,9 +23,14 @@ const (
 
 var re = regexp.MustCompile("^[0-9]{8}$")
 
-type apiResponse struct {
+type externalApiResponse struct {
 	Response      *http.Response
 	ApiIdentifier string
+}
+
+type consoleOutput struct {
+	Api  string      `json:"api"`
+	Data interface{} `json:"data"`
 }
 
 func FastestCepHandler(w http.ResponseWriter, r *http.Request) {
@@ -38,7 +44,7 @@ func FastestCepHandler(w http.ResponseWriter, r *http.Request) {
 	viacepURI := VIACEP_URL + cep + "/json/"
 	brasilapiURI := BRASILAPI_URL + cep
 
-	responsesChannel := make(chan apiResponse, 2)
+	responsesChannel := make(chan externalApiResponse)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
@@ -57,7 +63,7 @@ func FastestCepHandler(w http.ResponseWriter, r *http.Request) {
 	processFastestCepApiResponse(w, body, resp.ApiIdentifier)
 }
 
-func externalCepApiRequest(ctx context.Context, url string, apiIdentifier string, ch chan<- apiResponse) {
+func externalCepApiRequest(ctx context.Context, url string, apiIdentifier string, ch chan<- externalApiResponse) {
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 
@@ -73,7 +79,7 @@ func externalCepApiRequest(ctx context.Context, url string, apiIdentifier string
 	}
 
 	select {
-	case ch <- apiResponse{Response: resp, ApiIdentifier: apiIdentifier}:
+	case ch <- externalApiResponse{Response: resp, ApiIdentifier: apiIdentifier}:
 	default:
 		return
 	}
@@ -90,20 +96,31 @@ func processFastestCepApiResponse(w http.ResponseWriter, body []byte, apiIdentif
 	if apiIdentifier == BRASILAPI_IDENTIFIER {
 		var dto dto.BrasilApiOutput
 		json.Unmarshal(body, &dto)
-		processJSON(w, dto)
+		processJSON(w, dto, BRASILAPI_IDENTIFIER)
 	} else if apiIdentifier == VIACEP_IDENTIFIER {
 		var dto dto.ViaCepOutput
 		json.Unmarshal(body, &dto)
-		processJSON(w, dto)
+		processJSON(w, dto, VIACEP_IDENTIFIER)
 	}
 }
 
-func processJSON(w http.ResponseWriter, data interface{}) {
+func processJSON(w http.ResponseWriter, data interface{}, api string) {
 
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Error processing JSON")
+		writeError(w, http.StatusInternalServerError, "Erro ao processar JSON")
 		return
+	}
+
+	encoder := json.NewEncoder(os.Stdout)
+	output := consoleOutput{
+		Api:  api,
+		Data: data,
+	}
+
+	err = encoder.Encode(output)
+	if err != nil {
+		log.Println("Erro ao encodar JSON para console:", err)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(jsonData)
