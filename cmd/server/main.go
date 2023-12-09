@@ -5,12 +5,11 @@ import (
 
 	"github.com/desvioow/goexpert-desafio-2/internal/infra/webserver"
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 )
 
 func main() {
 	r := chi.NewRouter()
-	r.Use(middleware.Logger)
+	//r.Use(middleware.Logger)
 	r.Get("/fastestcep/{cep}", webserver.FastestCepHandler)
 	http.ListenAndServe(":8080", r)
 }
