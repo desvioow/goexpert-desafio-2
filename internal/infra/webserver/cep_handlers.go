@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/desvioow/goexpert-desafio-2/internal/dto"
@@ -19,6 +20,8 @@ const (
 	BRASILAPI_IDENTIFIER = "BRASIL_API"
 )
 
+var re = regexp.MustCompile("^[0-9]{8}$")
+
 type apiResponse struct {
 	Response      *http.Response
 	ApiIdentifier string
@@ -27,8 +30,8 @@ type apiResponse struct {
 func FastestCepHandler(w http.ResponseWriter, r *http.Request) {
 
 	cep := chi.URLParam(r, "cep")
-	if cep == "" {
-		writeError(w, http.StatusBadRequest, "cep não informado")
+	if !re.MatchString(cep) {
+		writeError(w, http.StatusBadRequest, "cep inválido")
 		return
 	}
 
@@ -52,7 +55,6 @@ func FastestCepHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	processFastestCepApiResponse(w, body, resp.ApiIdentifier)
-
 }
 
 func externalCepApiRequest(ctx context.Context, url string, apiIdentifier string, ch chan<- apiResponse) {
