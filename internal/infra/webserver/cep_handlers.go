@@ -70,7 +70,11 @@ func externalCepApiRequest(ctx context.Context, url string, apiIdentifier string
 		return
 	}
 
-	ch <- apiResponse{Response: resp, ApiIdentifier: apiIdentifier}
+	select {
+	case ch <- apiResponse{Response: resp, ApiIdentifier: apiIdentifier}:
+	default:
+		return
+	}
 }
 
 func writeError(w http.ResponseWriter, statusCode int, message string) {
