@@ -35,6 +35,9 @@ type consoleOutput struct {
 
 func FastestCepHandler(w http.ResponseWriter, r *http.Request) {
 
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second)
+	defer cancel()
+
 	cep := chi.URLParam(r, "cep")
 	if !re.MatchString(cep) {
 		writeError(w, http.StatusBadRequest, "cep inválido")
@@ -45,22 +48,25 @@ func FastestCepHandler(w http.ResponseWriter, r *http.Request) {
 	brasilapiURI := BRASILAPI_URL + cep
 
 	responsesChannel := make(chan externalApiResponse)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
 
 	go externalCepApiRequest(ctx, brasilapiURI, BRASILAPI_IDENTIFIER, responsesChannel)
 	go externalCepApiRequest(ctx, viacepURI, VIACEP_IDENTIFIER, responsesChannel)
 
-	resp := <-responsesChannel
-	defer resp.Response.Body.Close()
-
-	body, err := io.ReadAll(resp.Response.Body)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "erro ao ler resposta da API")
+	select {
+	case <-ctx.Done():
+		writeError(w, http.StatusRequestTimeout, "tempo de resposta excedido")
 		return
-	}
+	case resp := <-responsesChannel:
+		defer resp.Response.Body.Close()
 
-	processFastestCepApiResponse(w, body, resp.ApiIdentifier)
+		body, err := io.ReadAll(resp.Response.Body)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "erro ao ler resposta da API")
+			return
+		}
+
+		processFastestCepApiResponse(w, body, resp.ApiIdentifier)
+	}
 }
 
 func externalCepApiRequest(ctx context.Context, url string, apiIdentifier string, ch chan<- externalApiResponse) {
@@ -80,7 +86,7 @@ func externalCepApiRequest(ctx context.Context, url string, apiIdentifier string
 
 	select {
 	case ch <- externalApiResponse{Response: resp, ApiIdentifier: apiIdentifier}:
-	default:
+	case <-ctx.Done():
 		return
 	}
 }
