@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// Constantes para URLs e identicadfores das APIs externas
 const (
 	VIACEP_URL           = "http://viacep.com.br/ws/"
 	VIACEP_IDENTIFIER    = "VIA_CEP"
@@ -21,14 +22,17 @@ const (
 	BRASILAPI_IDENTIFIER = "BRASIL_API"
 )
 
+// Regex para validar cep
 var re = regexp.MustCompile("^[0-9]{8}$")
 
-type externalApiResponse struct {
+// Representação das respostas das APIs externas
+type ExternalApiResponse struct {
 	Response      *http.Response
 	ApiIdentifier string
 }
 
-type consoleOutput struct {
+// Repesentação do output para o console
+type ConsoleOutput struct {
 	Api  string      `json:"api"`
 	Data interface{} `json:"data"`
 }
@@ -46,8 +50,7 @@ func FastestCepHandler(w http.ResponseWriter, r *http.Request) {
 
 	viacepURI := VIACEP_URL + cep + "/json/"
 	brasilapiURI := BRASILAPI_URL + cep
-
-	responsesChannel := make(chan externalApiResponse)
+	responsesChannel := make(chan ExternalApiResponse)
 
 	go externalCepApiRequest(ctx, brasilapiURI, BRASILAPI_IDENTIFIER, responsesChannel)
 	go externalCepApiRequest(ctx, viacepURI, VIACEP_IDENTIFIER, responsesChannel)
@@ -69,7 +72,13 @@ func FastestCepHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func externalCepApiRequest(ctx context.Context, url string, apiIdentifier string, ch chan<- externalApiResponse) {
+func writeError(w http.ResponseWriter, statusCode int, message string) {
+
+	w.WriteHeader(statusCode)
+	w.Write([]byte(message))
+}
+
+func externalCepApiRequest(ctx context.Context, url string, apiIdentifier string, ch chan<- ExternalApiResponse) {
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 
@@ -85,42 +94,45 @@ func externalCepApiRequest(ctx context.Context, url string, apiIdentifier string
 	}
 
 	select {
-	case ch <- externalApiResponse{Response: resp, ApiIdentifier: apiIdentifier}:
+	case ch <- ExternalApiResponse{Response: resp, ApiIdentifier: apiIdentifier}:
 	case <-ctx.Done():
 		return
 	}
 }
 
-func writeError(w http.ResponseWriter, statusCode int, message string) {
-
-	w.WriteHeader(statusCode)
-	w.Write([]byte(message))
-}
-
 func processFastestCepApiResponse(w http.ResponseWriter, body []byte, apiIdentifier string) {
 
-	if apiIdentifier == BRASILAPI_IDENTIFIER {
-		var dto dto.BrasilApiOutput
-		json.Unmarshal(body, &dto)
-		processJSON(w, dto, BRASILAPI_IDENTIFIER)
-	} else if apiIdentifier == VIACEP_IDENTIFIER {
-		var dto dto.ViaCepOutput
-		json.Unmarshal(body, &dto)
-		processJSON(w, dto, VIACEP_IDENTIFIER)
+	type ApiDtoMap struct {
+		Identifier string
+		Dto        interface{}
+	}
+
+	var apiDtoMap = map[string]ApiDtoMap{
+		BRASILAPI_IDENTIFIER: {Identifier: BRASILAPI_IDENTIFIER, Dto: dto.BrasilApiOutput{}},
+		VIACEP_IDENTIFIER:    {Identifier: VIACEP_IDENTIFIER, Dto: dto.ViaCepOutput{}},
+	}
+
+	if apiDto, ok := apiDtoMap[apiIdentifier]; ok {
+		err := json.Unmarshal(body, &apiDto.Dto)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Erro ao processar JSON para dados")
+			return
+		}
+		processAndSendJSON(w, apiDto.Dto, apiDto.Identifier)
 	}
 }
 
-func processJSON(w http.ResponseWriter, data interface{}, api string) {
+func processAndSendJSON(w http.ResponseWriter, data interface{}, apiIdentifier string) {
 
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Erro ao processar JSON")
+		writeError(w, http.StatusInternalServerError, "Erro ao processar dados para JSON")
 		return
 	}
 
 	encoder := json.NewEncoder(os.Stdout)
-	output := consoleOutput{
-		Api:  api,
+	output := ConsoleOutput{
+		Api:  apiIdentifier,
 		Data: data,
 	}
 
